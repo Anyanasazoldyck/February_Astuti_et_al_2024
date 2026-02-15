@@ -174,3 +174,5 @@ png("analysis/VlnKcandMomMarkers.png", res=300, width = 12*300, height = 3*300)
 p1 <- VlnPlot(sc_data, features = mam, pt.size = 0, ncol = 4)+ general_theme
 p1
 dev.off()
+
+# Percentage of each cluster in th
