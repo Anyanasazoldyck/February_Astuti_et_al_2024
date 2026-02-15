@@ -2,6 +2,8 @@
 library(Seurat)
 library(ggplot2)
 library(patchwork)
+library(dplyr)
+
 #set working dir####
 setwd("D:/PDAC_liver_metastasis")
 
@@ -175,4 +177,50 @@ p1 <- VlnPlot(sc_data, features = mam, pt.size = 0, ncol = 4)+ general_theme
 p1
 dev.off()
 
-# Percentage of each cluster in th
+# Percentage of each cell type in cluster -----
+ss<- readxl::read_xlsx("ss.xlsx", sheet = 2)
+## cells
+
+# differential analysis per ---
+sc_data<- JoinLayers(sc_data)
+marker <- FindAllMarkers(sc_data, only.pos = T)
+
+topn <- marker[marker$p_val_adj<0.01 & marker$avg_log2FC > 1,] %>% 
+  group_by(cluster) %>% 
+ slice_head(n=5)
+
+head(topn)
+hm_mtx <- AverageExpression(
+  sc_data,
+  features = topn$gene,
+  group.by = "seurat_clusters"
+)$RNA
+
+hm_mtx <- t(scale(t(hm_mtx)))
+colnames(hm_mtx) <- c("0", "1", "2" ,"3" ,"4", "5", "6", "7", "8" ,"9")
+annotation_df <- data.frame(ss)
+rownames(annotation_df)<- annotation_df$seurat_cluster
+annotation_df$seurat_cluster <- NULL
+topn <- topn %>% arrange(cluster)
+
+hm_mtx <- hm_mtx[topn$gene, ]
+
+# Calculate gaps
+gap_rows <- cumsum(rle(as.character(topn$cluster))$lengths)
+
+graphics.off()
+png("analysis/hm.png", res=300, width = 10*300, height = 10*300)
+p<-pheatmap::pheatmap(hm_mtx, annotation_col = annotation_df, cluster_cols = F, cluster_rows = F,
+                      gaps_row = gap_rows)
+p
+dev.off()
+# update names ----
+new.cluster.ids = ss$cell_type
+
+names(new.cluster.ids) = levels(sc_data)
+sc_data = RenameIdents(sc_data, new.cluster.ids)
+sc_data = AddMetaData(sc_data, sc_data@active.ident, col.name = "cell_types")
+sc_data = SetIdent(sc_data, value = sc_data$seurat_clusters)
+
+
+# 
