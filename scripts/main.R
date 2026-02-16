@@ -91,7 +91,6 @@ dev.off()
 
 # Merge seurat objects ----
 sc_data = merge(x = sc_list[[1]], y = sc_list[-1])
-saveRDS(sc_data, "data/sc_data.rds")
 # LogNormalize and Scaling ----
 sc_data = NormalizeData(sc_data, scale.factor = 10000)
 sc_data = ScaleData(object = sc_data)
@@ -108,6 +107,7 @@ sc_data <- sc_data <- subset(sc_data, subset = Adgre1 > 0 & Cd68 >0)
 dim(sc_data)
 print("31053   9167") # I have slightly higher cells, as I did not filer Ribo
 
+RandomSeed <-999
 
 
 # Dim Reduction and Clustering ----
@@ -116,7 +116,6 @@ ElbowPlot(sc_data)
 dims_to_use <- 1:20
 
 # cluster ----
-
 
 sc_data <- FindNeighbors(object = sc_data, 
                                    dims = dims_to_use)
@@ -135,6 +134,8 @@ DimPlot(sc_data, pt.size = 0.5, order = F, label = T,
         label.size = 5, label.color = "black", group.by = "group") &umap_theme
 dev.off()
 
+#save----
+saveRDS(sc_data, "data/sc_data.rds")
 
 # Highlight Timepoint
 
@@ -265,6 +266,25 @@ for (id in names(GO_list)) {
 }
 
 
+
+# what is the distrubution of these clusters -----
+
+df <- data.frame(table( sc_data$timepoint, sc_data$seurat_clusters))
+colnames(df)<- c("classification","cluster","freq")
+df<-df %>% group_by(cluster) %>% mutate(sum=sum(freq))
+df<-df %>% mutate(pct=round(freq/sum,2)*100)
+png("analysis/clustercompositin.png", res=300, width = 6*300, height = 3*300)
+ggplot (df, aes(x=cluster, y=pct, fill = classification))+ geom_col()
+dev.off()
+
+
+df <- data.frame(table( sc_data$seurat_clusters, sc_data$timepoint))
+colnames(df)<- c("cluster","classification","freq")
+df<-df %>% group_by(classification) %>% mutate(sum=sum(freq))
+df<-df %>% mutate(pct=round(freq/sum,2)*100)
+png("analysis/ClassificationDistribution.png", res=300, width = 6*300, height = 3*300)
+ggplot (df, aes(x=classification, y=pct, fill = cluster))+ geom_col() +theme_classic()
+dev.off()
 # update names ----
 new.cluster.ids = ss$cell_type
 
