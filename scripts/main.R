@@ -183,12 +183,16 @@ ss<- readxl::read_xlsx("ss.xlsx", sheet = 2)
 
 # differential analysis per ---
 sc_data<- JoinLayers(sc_data)
-marker <- FindAllMarkers(sc_data, only.pos = T)
+marker <- FindAllMarkers(sc_data)
 
-topn <- marker[marker$p_val_adj<0.01 & marker$avg_log2FC > 1,] %>% 
-  group_by(cluster) %>% 
- slice_head(n=5)
+write.csv(marker,"analysis/markers.csv")
 
+
+topn <- marker %>%
+  filter(avg_log2FC > 1 & p_val_adj < 0.01) %>%
+  group_by(cluster) %>%
+  arrange(desc(avg_log2FC), .by_group = TRUE) %>%
+  slice_head(n = 5)
 head(topn)
 hm_mtx <- AverageExpression(
   sc_data,
@@ -209,11 +213,58 @@ hm_mtx <- hm_mtx[topn$gene, ]
 gap_rows <- cumsum(rle(as.character(topn$cluster))$lengths)
 
 graphics.off()
+
 png("analysis/hm.png", res=300, width = 10*300, height = 10*300)
 p<-pheatmap::pheatmap(hm_mtx, annotation_col = annotation_df, cluster_cols = F, cluster_rows = F,
                       gaps_row = gap_rows)
 p
 dev.off()
+
+
+# GO enrichment analysis using BP ----
+library(clusterProfiler)
+library(org.Mm.eg.db)
+library(AnnotationDbi)
+
+cluster_id <- unique(markers$cluster)
+
+GO_list <- list()
+
+for (c in cluster_id) {
+  
+  genes <- markers %>%
+    filter(cluster == c,
+           avg_log2FC > 1,
+           p_val_adj < 0.01) %>%
+    pull(gene)   
+  
+  GO_results <- enrichGO(
+    gene = genes,
+    OrgDb = org.Mm.eg.db,
+    keyType = "SYMBOL",
+    ont = "BP"
+  )
+  
+  GO_list[[as.character(c)]] <- GO_results
+}
+
+# plot 
+Plots_file <- "analysis/GO_results"
+dir.create(Plots_file, recursive = TRUE, showWarnings = FALSE)
+
+for (id in names(GO_list)) {
+  
+  p <- barplot(GO_list[[id]], showCategory = 5)
+  
+  png(file.path(Plots_file, paste0(id, ".png")),
+      width = 2000, height = 1600, res = 300)
+  
+  print(p)
+  
+  dev.off()
+}
+
+
 # update names ----
 new.cluster.ids = ss$cell_type
 
