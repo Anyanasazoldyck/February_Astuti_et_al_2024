@@ -216,7 +216,8 @@ gap_rows <- cumsum(rle(as.character(topn$cluster))$lengths)
 graphics.off()
 
 png("analysis/hm.png", res=300, width = 10*300, height = 10*300)
-p<-pheatmap::pheatmap(hm_mtx, annotation_col = annotation_df, cluster_cols = F, cluster_rows = F,
+p<-pheatmap::pheatmap(hm_mtx, annotation_col = annotation_df, cluster_cols = F,
+                      cluster_rows = F,
                       gaps_row = gap_rows)
 p
 dev.off()
@@ -285,6 +286,14 @@ df<-df %>% mutate(pct=round(freq/sum,2)*100)
 png("analysis/ClassificationDistribution.png", res=300, width = 6*300, height = 3*300)
 ggplot (df, aes(x=classification, y=pct, fill = cluster))+ geom_col() +theme_classic()
 dev.off()
+
+# KC vs. MOM in advance vs. early disease ----
+
+png("analysis/MarkerAcrossClass.png", res=300, width = 9*300, height = 3*300)
+VlnPlot(sc_data, features =mam, group.by  = "group", pt.size = 0,ncol  = 4 )
+
+dev.off()
+
 # update names ----
 new.cluster.ids = ss$cell_type
 
