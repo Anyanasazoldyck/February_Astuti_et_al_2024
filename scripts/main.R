@@ -137,7 +137,7 @@ dev.off()
 #save----
 saveRDS(sc_data, "data/sc_data.rds")
 
-# Highlight Timepoint
+# Highlight Timepoint ----
 
 png("analysis/TimepointDist.png", res=300, width = 10*300, height = 4*300)
 p1 <- DimPlot(sc_data,
@@ -174,7 +174,7 @@ dev.off()
 
 
 png("analysis/VlnKcandMomMarkers.png", res=300, width = 12*300, height = 3*300)
-p1 <- VlnPlot(sc_data, features = mam, pt.size = 0, ncol = 4)+ general_theme
+p1 <- VlnPlot(sc_data, features = mam, pt.size = 0, ncol = 4)
 p1
 dev.off()
 
@@ -189,11 +189,13 @@ marker <- FindAllMarkers(sc_data)
 write.csv(marker,"analysis/markers.csv")
 
 
-topn <- marker %>%
+topn <- markers %>%
   filter(avg_log2FC > 1 & p_val_adj < 0.01) %>%
   group_by(cluster) %>%
   arrange(desc(avg_log2FC), .by_group = TRUE) %>%
   slice_head(n = 5)
+write.csv(topn,"analysis/Topmarkers.csv")
+
 head(topn)
 hm_mtx <- AverageExpression(
   sc_data,
@@ -294,6 +296,23 @@ VlnPlot(sc_data, features =mam, group.by  = "group", pt.size = 0,ncol  = 4 )
 
 dev.off()
 
+
+# highlight pMAM vs. dMAM---
+png("analysis/MAMvsdMAM-.png", res=300, width = 8*300, height = 4*300)
+
+p2 <- DimPlot(sc_data,
+              cells.highlight = colnames(sc_data)[sc_data$group == "Advanced Proximal"],
+              cols.highlight = "red",
+              label = T ) +umap_theme
+p3 <- DimPlot(sc_data,
+              cells.highlight = colnames(sc_data)[sc_data$group == "Advanced Distal"],
+              cols.highlight = "#0072B2",
+              label = T ) +umap_theme
+p2+p3
+dev.off()
+
+
+
 # update names ----
 new.cluster.ids = ss$cell_type
 
@@ -303,4 +322,41 @@ sc_data = AddMetaData(sc_data, sc_data@active.ident, col.name = "cell_types")
 sc_data = SetIdent(sc_data, value = sc_data$seurat_clusters)
 
 
-# 
+
+##===============================================
+# Part Two: Analyzing pMAM in depth 
+#================================================
+# check seurat identity 
+Idents(sc_data)= sc_data$seurat_clusters
+# Visualize Key MoM marker on the Feature plot
+heatmap_pal2 <- c("#0D0887","#7E03A8","#CC4678","#F0F921")
+p <- DimPlot(sc_data, label = T, label.size = 5, pt.size = 1)+umap_theme
+p_ap_m2<- FeaturePlot(sc_data,
+                   features = c("H2-Eb1" ,"H2-Ab1", "Cd74","Chil3","Mrc1","Arg1"))&scale_color_gradientn(colours = heatmap_pal2)
+png("analysis/AP_M2_signiture.png", res=300, width = 8*300, height = 7*300) 
+
+p_ap_m2+p
+dev.off()
+
+# Subset the pMAM clusters 2,3,6
+sc_prox <- subset(sc_data, subset = seurat_clusters %in% c(2,3,6) )
+
+
+# Normalize, scale , dimreduction and recluster----
+# LogNormalize and Scaling ----
+sc_prox = NormalizeData(sc_prox, scale.factor = 10000)
+sc_prox = ScaleData(object = sc_prox)
+sc_prox = FindVariableFeatures(object = sc_prox, nfeatures = 2000)
+# Dim Reduction and Clustering ----
+sc_prox <- RunPCA(sc_prox, seed.use = RandomSeed)
+ElbowPlot(sc_prox)
+dims_to_use <- 1:20
+
+# cluster ----
+
+sc_prox <- FindNeighbors(object = sc_prox, 
+                         dims = dims_to_use)
+sc_prox <- FindClusters(object = sc_prox, 
+                        resolution = 0.44, 
+                        random.seed = RandomSeed)
+sc_prox = RunUMAP(sc_prox, reduction = "pca", dims = dims_to_use, seed.use = RandomSeed)
