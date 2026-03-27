@@ -314,7 +314,8 @@ dev.off()
 
 
 # update names ----
-new.cluster.ids = ss$cell_type
+ss<- readxl::read_xlsx("ss.xlsx",sheet = "Sheet2")
+new.cluster.ids = ss$KC_or_MOM_mapp
 
 names(new.cluster.ids) = levels(sc_data)
 sc_data = RenameIdents(sc_data, new.cluster.ids)
@@ -328,17 +329,56 @@ sc_data = SetIdent(sc_data, value = sc_data$seurat_clusters)
 #================================================
 # check seurat identity 
 Idents(sc_data)= sc_data$seurat_clusters
-# Visualize Key MoM marker on the Feature plot
+# Visualize Key MoM marker on the Feature plot----------
 heatmap_pal2 <- c("#0D0887","#7E03A8","#CC4678","#F0F921")
-p <- DimPlot(sc_data, label = T, label.size = 5, pt.size = 1)+umap_theme
-p_ap_m2<- FeaturePlot(sc_data,
-                   features = c("H2-Eb1" ,"H2-Ab1", "Cd74","Chil3","Mrc1","Arg1"))&scale_color_gradientn(colours = heatmap_pal2)
-png("analysis/AP_M2_signiture.png", res=300, width = 8*300, height = 7*300) 
 
-p_ap_m2+p
+# define expression min and max to AP and M2- related genes
+features <- c("H2-Eb1","H2-Ab1","Cd74","Chil3","Mrc1","Arg1")
+expr <- FetchData(sc_data, vars = features)
+min_val <- min(expr)
+max_val <- max(expr)
+
+#plot umap next to feature plot
+p <- DimPlot(sc_data, label = T, label.size = 5, pt.size = 1)+umap_theme
+p_ap_m2<- FeaturePlot(
+  sc_data,
+  features = features,
+  min.cutoff = min_val,
+  max.cutoff = max_val,
+  combine = TRUE
+) & 
+  scale_color_gradientn(colours = heatmap_pal2, limits = c(min_val, max_val))
+
+# I am collecting all confusing labels into one unified using plot_layout
+p_ap_m2 <- p_ap_m2 + plot_layout(guides = "collect") &
+  theme(legend.position = "right")
+
+final_plot <- p_ap_m2 + p + plot_layout(guides = "collect")&theme(plot.title = element_text(hjust = 0.5), 
+                                                                  axis.text = element_blank(), 
+                                                                  axis.title = element_text(size = 12), 
+                                                                  text = element_text(size = 12, family = "ArialMT"),
+                                                                  axis.ticks = element_blank())
+png("analysis/AP_M2_signiture.png", res=300, width = 8*300, height = 8*300) 
+final_plot
+
 dev.off()
 
-# Subset the pMAM clusters 2,3,6
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Subset the pMAM clusters 2,3,6---------------
 sc_prox <- subset(sc_data, subset = seurat_clusters %in% c(2,3,6) )
 
 
@@ -360,3 +400,158 @@ sc_prox <- FindClusters(object = sc_prox,
                         resolution = 0.44, 
                         random.seed = RandomSeed)
 sc_prox = RunUMAP(sc_prox, reduction = "pca", dims = dims_to_use, seed.use = RandomSeed)
+
+
+
+
+#rename the clusters into alphabets to make it easier to annotate----
+ss<- readxl::read_xlsx("ss.xlsx", sheet = "Sheet3")
+
+new.cluster.ids = ss$alpha_name
+
+names(new.cluster.ids) = levels(sc_prox)
+sc_prox = RenameIdents(sc_prox, new.cluster.ids)
+sc_prox = AddMetaData(sc_prox, sc_prox@active.ident, col.name = "symbols")
+Idents(sc_prox)
+
+
+
+
+# Plot ----
+p <- DimPlot(sc_prox, label = T, label.size = 5, pt.size = 1)&umap_theme
+png("analysis/Mom_umap.png", res=300, width = 5*300, height = 5*300)
+p
+dev.off()
+
+
+
+
+# Visualize Early and Advanced Tumorr====
+cell_to_highlight_advance <-colnames(sc_prox)[sc_prox$timepoint == "Advanced"]
+cell_to_highlight_early <-colnames(sc_prox)[sc_prox$timepoint == "Early"]
+
+
+png("analysis/Early_vs_Advanced_mom.png", res=300, height = 5*300, width = 10*300)
+p_advance <- DimPlot(sc_prox,
+                     cells.highlight = cell_to_highlight_advance,
+                     cols.highlight = "salmon",
+                     label = T, pt.size = 2, sizes.highlight = 2) +umap_theme
+p_ealry <- DimPlot(sc_prox,
+                   cells.highlight =cell_to_highlight_early,
+                   cols.highlight = "#0072B2",
+                   label = T , pt.size = 2, sizes.highlight = 2) +umap_theme
+p_advance+p_ealry
+dev.off()
+
+
+
+
+# Visualize which cell is early and which is not -----
+p<- dittoSeq::dittoBarPlot(sc_prox, var = sc_prox$timepoint,
+                           group.by = Idents(sc_prox),scale =  "count")
+?dittoSeq::dittoBarPlot
+png("analysis/cluster_composition.png", res=300, height = 5*300, width = 10*300)
+
+p
+dev.off()
+
+
+# comparing new clusters with old clusters
+png("analysis/comparing new clusters with old clusters.png", res=300, height = 5*300, width = 5*300)
+DimPlot(sc_prox,group.by = "cell_types", pt.size = 1)&theme(plot.title = element_text(hjust = 0.5), 
+                                                            axis.text = element_blank(), 
+                                                            axis.title = element_text(size = 12), 
+                                                            text = element_text(size = 12, family = "ArialMT"),
+                                                            axis.ticks = element_blank())
+dev.off()
+
+# Markers for Mom subset------------------
+unique_clusters <- levels(sc_prox$symbols)
+markers<- FindAllMarkers(sc_prox)
+# save it as an xlsx object ----
+
+write.csv(markers,"analysis/Mom_markers.csv")
+
+
+topn_mom <- markers %>%
+  filter(avg_log2FC > 1 & p_val_adj < 0.01) %>%
+  group_by(cluster) %>%
+  arrange(desc(avg_log2FC), .by_group = TRUE) %>%
+  slice_head(n = 10)
+
+# Heatmap----
+
+
+
+genes <- c("H2-Eb1","H2-Ab1","Cd74",
+                       "Chil3","Mrc1","Arg1","Cd300a",
+                       "Cd36", "Scarb1", "Anxa2" ,
+                       "Gpnmb", "Lipa", "Ctsb", "Ctsd", "Psap", "Grn",
+                       "Il6", "Tnf" , "Il1a",
+  "Chil3","Mrc1","Arg1","Socs3","Thbs1","Trem2","Mki67",
+  "H2-Ab1","H2-Eb1","Cd74","H2-Aa",
+  "Cd300a","Cd36","Scarb1","Anxa2","Gpnmb","Fabp5","Abcg1","Lipa","Ctsb","Ctsd","Psap","Grn",
+  "Birc5","Tubb5","H2afv","Hmgb1","Mki67","Stmn1",
+  "Il6","Nfkbia","Nr4a1","Nfkbiz","Nlrp3","Tnf","Egr1","Il1a","Il10","Ccl6","Ccl9",
+  "Cxcl9","Cxcl10","Ccl5","Cd40","Stat1","Socs1","H2-Q7","H2-K1","H2-T23"
+)
+genes <- unique(genes)
+hm_mtx <- AverageExpression(
+  sc_prox,
+  features = genes,
+  group.by = "symbols"
+)$RNA
+
+hm_mtx <- t(scale(t(hm_mtx)))
+colnames(hm_mtx) <- ss$alpha_name
+annotation_df <- data.frame(ss)
+rownames(annotation_df)<- annotation_df$seurat_cluster
+annotation_df$seurat_cluster <- NULL
+
+png("analysis/Final_HM_mom.png",
+    res=300,
+    height = 8*300,
+    width = 5*300)
+pheatmap::pheatmap(hm_mtx, cluster_rows = T, cluster_cols = F)
+dev.off()
+
+# Cluster D is new . I think it contains KC MAM ----
+p<- VlnPlot(sc_prox, features = c( c("Clec4f", "Vsig4",  "Timd4", "Ccr2")
+))
+graphics.off()
+p
+png("analysis/ClusterD_is_KC.png",
+    res=300,
+    height = 8*300,
+    width = 5*300)
+p
+dev.off()
+p<- VlnPlot(sc_prox, features = c( c("Clec4f", "Vsig4",  "Timd4", "Ccr2")))
+graphics.off()
+p
+png("analysis/ClusterD_is_KC.png",
+    res=300,
+    height = 4*300,
+    width = 8*300)
+p
+dev.off()
+
+
+
+
+#---------------------------------------------
+# Pseudotime 
+#---------------------------------------------
+expr <- GetAssayData(sc_prox, slot = "data")
+library(TSCAN)
+
+proc <- preprocess(expr)
+order <- TSCANorder(clust)
+pseudotime <- rank(order)
+sc_prox$pseudotime <- pseudotime[Cells(sc_prox)]
+FeaturePlot(sc_prox, features = "pseudotime")
+# order from cluster G
+order <- TSCANorder(clust="G", flip = TRUE)
+VlnPlot(sc_prox, features = "pseudotime", group.by = "seurat_clusters")
+#Which genes drive macrophage evolution?
+  diff <- difftest(proc, order)
