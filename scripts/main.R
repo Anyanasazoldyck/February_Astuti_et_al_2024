@@ -537,21 +537,103 @@ p
 dev.off()
 
 
-
-
-#---------------------------------------------
-# Pseudotime 
-#---------------------------------------------
-expr <- GetAssayData(sc_prox, slot = "data")
+#------------------------------
+#pseudotime
+#-----------------------------
 library(TSCAN)
+library(SingleCellExperiment)
+library(scater)
 
-proc <- preprocess(expr)
-order <- TSCANorder(clust)
-pseudotime <- rank(order)
-sc_prox$pseudotime <- pseudotime[Cells(sc_prox)]
-FeaturePlot(sc_prox, features = "pseudotime")
-# order from cluster G
-order <- TSCANorder(clust="G", flip = TRUE)
-VlnPlot(sc_prox, features = "pseudotime", group.by = "seurat_clusters")
-#Which genes drive macrophage evolution?
-  diff <- difftest(proc, order)
+#out dir ====
+dir.create("analysis/pseudotime_TSCAN", recursive = TRUE, showWarnings = FALSE)
+
+
+
+
+# ===============================================================
+# removing cluster D 
+#----------------------------------------------------------------
+print("Becuase cluster D is a mix KC and Mom, It would not make sence to add it 
+      to the trajectory becuase it is from different origin.")
+sc_prox_pt <- subset(sc_prox, subset = symbols != "D")
+sc_prox_pt <- NormalizeData(sc_prox_pt)
+
+
+
+
+# turn sc_prox_pt into sce-----------
+sce         <- as.SingleCellExperiment(sc_prox_pt)
+colLabels(sce) <- sc_prox_pt$symbols
+
+active_clusters <- sort(unique(sc_prox_pt$symbols))
+active_cols     <- cluster_cols[active_clusters]
+
+
+# Run TSNE on the existing PCA 
+set.seed(RandomSeed)
+sce <- runTSNE(sce, dimred = "PCA", name = "TSNE")
+
+
+# =============================================================================
+# build MST 
+# =============================================================================
+
+by.cluster <- aggregateAcrossCells(sce, ids = colLabels(sce))
+centroids  <- reducedDim(by.cluster, "PCA")
+rownames(centroids) <- colData(by.cluster)$ids   # label rows with A–F/G
+
+
+mst <- createClusterMST(centroids, clusters = NULL)
+
+# draw trajectory lines
+line.data.pca  <- reportEdges(by.cluster, mst = mst, clusters = NULL, use.dimred = "PCA")
+line.data.tsne <- reportEdges(by.cluster, mst = mst, clusters = NULL, use.dimred = "TSNE")
+
+
+# =============================================================================
+# Pseudotime ordering  
+# =============================================================================
+print("My cluster G is thier cluster F, High AP and T cell recruting singniture")
+map.tscan    <- mapCellsToEdges(sce, mst = mst, use.dimred = "PCA")
+tscan.pseudo <- orderCells(map.tscan, mst, start = "G")
+
+# Average across lineages → one pseudotime value per cell
+common.pseudo             <- averagePseudotime(tscan.pseudo)
+
+# My favorite part is returning it to the seurat object----
+sc_prox_pt$pseudotime     <- common.pseudo[colnames(sc_prox_pt)]
+sce$pseudotime            <- common.pseudo
+
+
+# =============================================================================
+#  MST plot with cluster labels using PC
+
+# =============================================================================
+png("analysis/pseudotime_TSCAN/MST_labelled.png",
+    res = 300, width = 6 * 300, height = 5 * 300)
+plotReducedDim(sce, dimred = "PCA", colour_by = "label") +
+  geom_line(data = line.data, aes(x = PC_1, y = PC_2, group = edge))
+dev.off()
+
+
+
+
+# =============================================================================
+# plot the pseudotime on umap 
+# =============================================================================
+png("analysis/pseudotime_TSCAN/pseudotime_UMAP.png",
+    res = 300, width = 6 * 300, height = 5 * 300)
+FeaturePlot(sc_prox_pt, features = "pseudotime", pt.size = 1) +
+  scale_colour_gradientn(
+    colours = c("#FDE725", "#35B779", "#31688E", "#440154"),
+    name    = "Pseudotime"
+  ) +
+  labs(title = "TSCAN pseudotime") +
+  theme(plot.title = element_text(hjust = 0.5), 
+        axis.text = element_blank(), 
+        axis.title = element_text(size = 12), 
+        text = element_text(size = 12, family = "ArialMT"),
+        axis.ticks = element_blank())
+dev.off()
+
+
